@@ -3,249 +3,302 @@ Orchestrator Agent - Coordinates agent communication and flow.
 Central controller that combines agent outputs.
 """
 from typing import Dict, Any, Optional
+from .base_agent import BaseAgent
 
-class OrchestrationAgent:
+
+class OrchestrationAgent(BaseAgent):
     """
     Central controller that:
     - Coordinates agent communication
     - Combines results from multiple agents
     - Generates final output for frontend
-    - Manages agent lifecycle
+    - Manages request routing
     """
-    
-    def __init__(self, agents: Dict[str, Any]):
+
+    def __init__(self, agent_id: str = "orchestrator", agents: Dict[str, BaseAgent] = None):
+        super().__init__(agent_id=agent_id, name="Orchestrator Agent")
+        self.agents = agents or {}
+        # Set orchestrator reference on all agents
+        for agent in self.agents.values():
+            agent.orchestrator = self
+
+    async def initialize(self) -> None:
+        """Initialize all registered agents."""
+        await super().initialize()
+        for agent in self.agents.values():
+            await agent.initialize()
+        print(f"Orchestrator initialized with {len(self.agents)} agents")
+
+    async def shutdown(self) -> None:
+        """Shutdown all agents."""
+        for agent in self.agents.values():
+            await agent.shutdown()
+        await super().shutdown()
+
+    async def process(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Initialize orchestrator with all agents.
-        
-        Args:
-            agents: Dict with keys: 'knowledge', 'nutrition', 'meal_planner', 'recommendation', 'progress', 'user', 'memory'
+        Main entry point for all requests to the agent system.
+
+        Request types:
+        - daily_summary: {
+            "action": "daily_summary",
+            "user_id": int,
+            "date": str
+          }
+        - progress_report: {
+            "action": "progress_report",
+            "user_id": int,
+            "days": 7
+          }
+        - log_meal: {
+            "action": "log_meal",
+            "user_id": int,
+            "meal_data": Dict
+          }
+        - recipe_suggestions: {
+            "action": "recipe_suggestions",
+            "user_id": int,
+            "constraints": Dict
+          }
+        - get_recommendations: {
+            "action": "get_recommendations",
+            "user_id": int,
+            "days": 7
+          }
         """
-        self.agents = agents
-        self.knowledge_agent = agents.get('knowledge')
-        self.nutrition_agent = agents.get('nutrition')
-        self.meal_planner_agent = agents.get('meal_planner')
-        self.recommendation_agent = agents.get('recommendation')
-        self.progress_agent = agents.get('progress')
-        self.user_agent = agents.get('user')
-        self.memory_agent = agents.get('memory')
-    
-    async def process_daily_summary_request(self, user_id: int, date: str) -> Dict[str, Any]:
+        action = request.get("action", "")
+        if not action:
+            raise ValueError("Action is required")
+
+        # Route to appropriate workflow
+        if action == "daily_summary":
+            return await self.workflow_daily_summary(
+                user_id=request["user_id"],
+                date_str=request.get("date")
+            )
+        elif action == "progress_report":
+            return await self.workflow_progress_report(
+                user_id=request["user_id"],
+                days=request.get("days", 7)
+            )
+        elif action == "log_meal":
+            return await self.workflow_log_meal(
+                user_id=request["user_id"],
+                meal_data=request["meal_data"]
+            )
+        elif action == "recipe_suggestions":
+            return await self.workflow_recipe_suggestions(
+                user_id=request["user_id"],
+                constraints=request.get("constraints", {})
+            )
+        elif action == "get_recommendations":
+            return await self.workflow_get_recommendations(
+                user_id=request["user_id"],
+                days=request.get("days", 7)
+            )
+        else:
+            # For direct agent access (e.g., /api/v1 routes that bypass orchestrator)
+            return await self._handle_direct_action(request)
+
+    # ==================== Workflows ====================
+
+    async def workflow_daily_summary(self, user_id: int, date_str: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generate daily summary by combining multiple agents.
-        
-        Flow:
-        1. User data → Nutrition Agent → calculate actual vs target
-        2. Meal suggestions ← Meal Planner Agent ← Knowledge Agent
-        3. Combine all data → final summary
+        Generate daily summary combining:
+        - User profile & daily macros
+        - Nutrition targets
+        - Meal suggestions for remaining macros
+        - Memory patterns update
         """
+        from datetime import date
+        target_date = date_str or date.today().isoformat()
         summary = {
-            'user_id': user_id,
-            'date': date,
-            'nutrition_status': {},
-            'meal_suggestions': [],
-            'recommendations': {},
-            'daily_macros': None
+            "user_id": user_id,
+            "date": target_date,
+            "nutrition_status": {},
+            "meal_suggestions": [],
+            "daily_macros": None
         }
-        
-        try:
-            # 1. Get user profile
-            user_profile = await self.user_agent.get_profile(user_id)
-            
-            # 2. Get daily logged macros
-            daily_macros = await self.user_agent.get_daily_macros(user_id, date)
-            summary['daily_macros'] = daily_macros
-            
-            # 3. Calculate targets
-            targets = await self.nutrition_agent.calculate_targets(
-                user_profile['weight_current'],
-                user_profile['height'],
-                user_profile['age'],
-                user_profile['gender'],
-                user_profile['activity_level'],
-                user_profile['goal']
-            )
-            summary['nutrition_status']['targets'] = targets
-            
-            # 4. Compute remaining macros for meal planning
-            if daily_macros:
-                remaining = {
-                    'calories': max(0, targets['calories'] - daily_macros['calories']),
-                    'protein': max(0, targets['protein_grams'] - daily_macros['protein']),
-                    'carbs': max(0, targets['carbs_grams'] - daily_macros['protein']),
-                }
-            else:
-                remaining = {
-                    'calories': targets['calories'],
-                    'protein': targets['protein_grams'],
-                    'carbs': targets['carbs_grams'],
-                }
-            summary['nutrition_status']['remaining'] = remaining
-            
-            # 5. Generate meal suggestions if needed
-            if remaining['calories'] > 100:  # Still need to eat
-                suggestions = await self.meal_planner_agent.generate_meal_suggestions(
-                    user_id=user_id,
-                    remaining_calories=remaining['calories'],
-                    remaining_macros=remaining,
-                    meal_type='dinner'  # Assume we're planning dinner
-                )
-                summary['meal_suggestions'] = suggestions
-            
-            # 6. Update memory patterns (if meal was logged)
-            if daily_macros:
-                await self.memory_agent.update_patterns(user_id, date, daily_macros)
-            
-        except Exception as e:
-            print(f"Error in daily summary: {e}")
-            summary['error'] = str(e)
-        
+
+        # 1. Get user profile
+        user_agent = self.agents.get("user")
+        if not user_agent:
+            raise ValueError("User agent not registered")
+
+        profile = await user_agent.process({"action": "get_profile", "user_id": user_id})
+        summary["profile"] = profile
+
+        # 2. Get daily macros
+        macros_response = await user_agent.process({
+            "action": "get_daily_macros",
+            "user_id": user_id,
+            "date": target_date
+        })
+        summary["daily_macros"] = macros_response
+
+        # 3. Calculate targets via NutritionAgent
+        nutrition_agent = self.agents.get("nutrition")
+        if nutrition_agent:
+            targets_resp = await nutrition_agent.process({
+                "action": "calculate_targets",
+                "profile": profile
+            })
+            summary["nutrition_status"]["targets"] = targets_resp
+
+            # Compute remaining
+            consumed = macros_response
+            targets = targets_resp
+            remaining = {
+                "calories": max(0, targets["daily_calories"] - consumed.get("calories", 0)),
+                "protein": max(0, targets["macro_breakdown"]["protein_grams"] - consumed.get("protein", 0)),
+                "carbs": max(0, targets["macro_breakdown"]["carbs_grams"] - consumed.get("carbs", 0)),
+                "fat": max(0, targets["macro_breakdown"]["fat_grams"] - consumed.get("fat", 0)),
+            }
+            summary["nutrition_status"]["remaining"] = remaining
+
+            # 4. Get meal suggestions if needed
+            if remaining["calories"] > 100:
+                meal_planner = self.agents.get("meal_planner")
+                if meal_planner:
+                    suggestions = await meal_planner.process({
+                        "action": "suggest_meals",
+                        "user_id": user_id,
+                        "remaining_calories": remaining["calories"],
+                        "remaining_macros": remaining,
+                        "meal_type": "dinner"
+                    })
+                    summary["meal_suggestions"] = suggestions.get("suggestions", [])
+
         return summary
-    
-    async def process_progress_report_request(self, user_id: int, days: int = 7) -> Dict[str, Any]:
+
+    async def workflow_progress_report(self, user_id: int, days: int = 7) -> Dict[str, Any]:
         """
-        Generate weekly progress report.
-        
-        Flow:
-        1. Get progress analysis from ProgressAgent
-        2. Get recommendations from RecommendationAgent
-        3. Combine into comprehensive report
+        Generate weekly progress report:
+        - Progress analysis
+        - Recommendations
         """
-        report = {
-            'user_id': user_id,
-            'period_days': days,
-            'progress_analysis': {},
-            'recommendations': {},
-            'summary': ''
-        }
-        
-        try:
-            # 1. Analyze progress
-            progress = await self.progress_agent.analyze_progress(user_id, days)
-            report['progress_analysis'] = progress
-            
-            # 2. Generate recommendations
-            recommendations = await self.recommendation_agent.generate_recommendations(
-                user_id, days
-            )
-            report['recommendations'] = recommendations
-            
-            # 3. Overall summary
-            report['summary'] = self._generate_report_summary(progress, recommendations)
-            
-        except Exception as e:
-            print(f"Error generating progress report: {e}")
-            report['error'] = str(e)
-        
+        report = {"user_id": user_id, "period_days": days}
+
+        # Get progress
+        progress_agent = self.agents.get("progress")
+        if progress_agent:
+            progress = await progress_agent.process({
+                "action": "analyze",
+                "user_id": user_id,
+                "days": days
+            })
+            report["progress_analysis"] = progress
+
+        # Get recommendations
+        rec_agent = self.agents.get("recommendation")
+        if rec_agent:
+            recs = await rec_agent.process({
+                "action": "generate",
+                "user_id": user_id,
+                "days": days
+            })
+            report["recommendations"] = recs
+            report["summary"] = recs.get("overall_feedback", "")
+
         return report
-    
-    async def process_meal_logging(
-        self,
-        user_id: int,
-        meal_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def workflow_log_meal(self, user_id: int, meal_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process a meal log entry.
-        
-        Flow:
-        1. Validate meal data (maybe with KnowledgeAgent for nutrition info)
-        2. Store via UserAgent
-        3. Update daily macros
-        4. Return current daily status
+        Process a meal logging:
+        - Record via UserAgent
+        - Update daily macros
+        - Update memory patterns
+        - Return daily status
         """
-        result = {
-            'success': False,
-            'meal_logged': None,
-            'daily_status': None
-        }
-        
-        try:
-            # 1. Log meal
-            logged_meal = await self.user_agent.log_meal(user_id, meal_data)
-            result['meal_logged'] = logged_meal
-            
-            # 2. Get updated daily macros
-            daily_status = await self.user_agent.get_daily_macros(
-                user_id, meal_data['date']
-            )
-            result['daily_status'] = daily_status
-            result['success'] = True
-            
-        except Exception as e:
-            print(f"Error logging meal: {e}")
-            result['error'] = str(e)
-            
+        user_agent = self.agents.get("user")
+        memory_agent = self.agents.get("memory")
+
+        # Log meal
+        result = {"success": False}
+        if user_agent:
+            logged = await user_agent.process({
+                "action": "log_meal",
+                "user_id": user_id,
+                "meal_data": meal_data
+            })
+            result["meal_logged"] = logged
+            result["daily_status"] = await user_agent.process({
+                "action": "get_daily_macros",
+                "user_id": user_id,
+                "date": meal_data.get("date")
+            })
+            result["success"] = True
+
+            # Update memory
+            if memory_agent:
+                await memory_agent.process({
+                    "action": "record_meal",
+                    "user_id": user_id,
+                    "meal_data": meal_data
+                })
+
         return result
-    
-    async def process_recipe_suggestions(
-        self,
-        user_id: int,
-        constraints: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def workflow_recipe_suggestions(self, user_id: int, constraints: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Get recipe suggestions.
-        
-        Flow:
-        1. Get user preferences
-        2. Meal Planner → Knowledge Agent → recipes
-        3. Filter by constraints
+        Get recipe suggestions through RecipeAgent.
+        Optionally filter by user preferences.
         """
-        suggestions = []
-        
-        try:
-            # Get user
-            preferences = await self.user_agent.get_preferences(user_id)
-            
-            # Generate suggestions
-            suggestions = await self.meal_planner_agent.generate_meal_suggestions(
-                user_id=user_id,
-                remaining_calories=constraints.get('calories', 0),
-                remaining_macros=constraints.get('macros', {}),
-                meal_type=constraints.get('meal_type', 'lunch'),
-                limit=constraints.get('limit', 3)
-            )
-            
-        except Exception as e:
-            print(f"Error getting recipe suggestions: {e}")
-            
-        return {
-            'suggestions': suggestions,
-            'count': len(suggestions)
+        # Get user preferences
+        user_agent = self.agents.get("user")
+        prefs = {}
+        if user_agent:
+            prefs = await user_agent.process({"action": "get_preferences", "user_id": user_id})
+
+        # Merge constraints with preferences
+        merged = {**constraints, **prefs}
+
+        # Use meal planner to get suggestions (or recipe agent directly)
+        meal_planner = self.agents.get("meal_planner")
+        if meal_planner:
+            return await meal_planner.process({
+                "action": "suggest_meals",
+                "user_id": user_id,
+                **merged
+            })
+        return {"suggestions": []}
+
+    async def workflow_get_recommendations(self, user_id: int, days: int = 7) -> Dict[str, Any]:
+        """Wrap RecommendationAgent."""
+        rec_agent = self.agents.get("recommendation")
+        if rec_agent:
+            return await rec_agent.process({
+                "action": "generate",
+                "user_id": user_id,
+                "days": days
+            })
+        return {"error": "Recommendation agent not available"}
+
+    async def _handle_direct_action(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        For direct agent access (e.g., specific API endpoint routes).
+        Expects {'agent': str, 'action': str, ...}
+        """
+        agent_name = request.get("agent")
+        if not agent_name:
+            raise ValueError("Agent name required for direct action")
+        agent = self.agents.get(agent_name)
+        if not agent:
+            raise ValueError(f"Agent '{agent_name}' not found")
+        # Remove orchestration-specific keys and pass rest to agent
+        clean_req = {k: v for k, v in request.items() if k not in ("action", "agent")}
+        return await agent.process(clean_req)
+
+    async def health(self) -> Dict[str, Any]:
+        """Health of orchestrator and all agents."""
+        status = {
+            "orchestrator": "healthy",
+            "agents": {}
         }
-    
-    def _generate_report_summary(
-        self,
-        progress: Dict[str, Any],
-        recommendations: Dict[str, Any]
-    ) -> str:
-        """
-        Generate human-readable summary of progress report.
-        """
-        weight_change = progress.get('weight_change_weekly', 0)
-        adherence = progress.get('adherence_rate', 0)
-        
-        summary_parts = []
-        
-        if abs(weight_change) > 0:
-            summary_parts.append(f"Weight change this week: {weight_change/1000:.1f} kg")
-        
-        summary_parts.append(f"Meal logging adherence: {adherence*100:.0f}%")
-        
-        if recommendations.get('calorie_adjustment'):
-            adj = recommendations['calorie_adjustment']
-            summary_parts.append(f"Calorie recommendation: {adj['reason']}")
-            
-        return "\n".join(summary_parts)
-    
-    async def health_check(self) -> Dict[str, str]:
-        """Check health of all agents."""
-        health = {}
         for name, agent in self.agents.items():
             try:
-                # Basic health check - agent responds
-                if hasattr(agent, 'health'):
-                    health[name] = await agent.health()
-                else:
-                    health[name] = 'operational'
+                h = await agent.health()
+                status["agents"][name] = h["status"]
             except Exception as e:
-                health[name] = f'error: {str(e)}'
-        return health
+                status["agents"][name] = f"error: {str(e)}"
+        return status

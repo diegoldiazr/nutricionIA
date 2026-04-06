@@ -6,12 +6,14 @@ from .progress_agent import ProgressAgent
 from .recommendation_agent import RecommendationAgent
 from .memory_agent import MemoryAgent
 from .orchestration_agent import OrchestrationAgent
+from .recipe_agent import RecipeAgent
 
 __all__ = [
     "KnowledgeAgent",
     "NutritionAgent",
     "UserAgent",
     "MealPlannerAgent",
+    "RecipeAgent",
     "ProgressAgent",
     "RecommendationAgent",
     "MemoryAgent",
