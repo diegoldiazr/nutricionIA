@@ -1,12 +1,32 @@
+# Frontend Dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy source code
+COPY . .
+
+# Production build
+RUN npm run build
+
+# Production image
 FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+# Copy built assets from builder
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
 
-COPY . .
+# Install production dependencies only
+RUN npm ci --only=production
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+# Start the application
+CMD ["npm", "start"]
