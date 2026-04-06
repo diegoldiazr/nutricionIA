@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   backend:
     build: ./src/backend
@@ -7,10 +8,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src/backend:/app
-      - ./sqlite_data:/app/sqlite.db
+      - sqlite_data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///app/sqlite.db
+      - DATABASE_URL=sqlite:///app/data/nutrition.db
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-claude-sonnet-4-20260414}
       - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-http://localhost:8000}
@@ -30,19 +30,8 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./src/frontend:/app
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-    networks:
-      - nutrition_net
-
-  mongodb:
-    image: mongo:5.0
-    container_name: nutrition_mongodb
-    restart: unless-stopped
-    volumes:
-      - nutrition_mongo_data:/data/db
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
     networks:
       - nutrition_net
 
@@ -51,4 +40,4 @@ networks:
     driver: bridge
 
 volumes:
-  nutrition_mongo_data:
+  sqlite_data:
