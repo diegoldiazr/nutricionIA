@@ -12,7 +12,13 @@ services:
     environment:
       - DATABASE_URL=sqlite:///app/sqlite.db
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-claude-sonnet-4-20260414}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-http://localhost:8000}
+      - OPENROUTER_SITE_NAME=${OPENROUTER_SITE_NAME:-Nutrition AI Assistant}
+      - OPENROUTER_TIMEOUT=${OPENROUTER_TIMEOUT:-60.0}
+      - OPENROUTER_MAX_RETRIES=${OPENROUTER_MAX_RETRIES:-3}
       - NOTION_TOKEN=${NOTION_TOKEN}
+      - NOTION_WORKSPACE=${NOTION_WORKSPACE}
     networks:
       - nutrition_net
 
