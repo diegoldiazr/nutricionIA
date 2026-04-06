@@ -1,28 +1,102 @@
-from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
+"""
+Centralized Configuration Management using Pydantic Settings.
+
+All configuration is loaded from environment variables.
+Environment variables can be set in .env file or exported in shell.
+"""
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from typing import Optional
 import os
 
-load_dotenv()
+
+class DatabaseSettings(BaseSettings):
+    """Database configuration."""
+    model_config = SettingsConfigDict(env_prefix="DATABASE_")
+
+    url: str = Field(
+        default="sqlite:///./data/nutrition.db",
+        description="Database connection URL"
+    )
+    pool_size: int = Field(default=5, description="Connection pool size")
+    echo: bool = Field(default=False, description="Enable SQL echo logging")
+
+
+class OpenRouterSettings(BaseSettings):
+    """OpenRouter AI API configuration."""
+    model_config = SettingsConfigDict(env_prefix="OPENROUTER_")
+
+    api_key: str = Field(
+        default="",
+        description="OpenRouter API key"
+    )
+    model: str = Field(
+        default="claude-sonnet-4-20260414",
+        description="Default AI model ID"
+    )
+    site_url: str = Field(
+        default="http://localhost:8000",
+        description="Site URL for API referer"
+    )
+    site_name: str = Field(
+        default="Nutrition AI Assistant",
+        description="Site name for API title"
+    )
+    timeout: float = Field(default=60.0, description="Request timeout in seconds")
+    max_retries: int = Field(default=3, description="Maximum retry attempts")
+
+
+class NotebookLMSettings(BaseSettings):
+    """NotebookLM knowledge base configuration."""
+    model_config = SettingsConfigDict(env_prefix="NOTEBOOKLM_")
+
+    api_url: str = Field(
+        default="https://notebooklm.googleapis.com/v1",
+        description="NotebookLM API base URL"
+    )
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    max_retries: int = Field(default=3, description="Maximum retry attempts")
+
+
+class NotionSettings(BaseSettings):
+    """Notion integration configuration (for NotebookLM auth)."""
+    model_config = SettingsConfigDict(env_prefix="NOTION_")
+
+    token: str = Field(
+        default="",
+        description="Notion integration token"
+    )
+    workspace: str = Field(
+        default="",
+        description="Notion workspace ID"
+    )
+
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./sqlite.db"
+    """
+    Main application settings.
 
-    # OpenRouter
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "claude-sonnet-4-20260414")
-    OPENROUTER_SITE_URL: str = os.getenv("OPENROUTER_SITE_URL", "http://localhost:8000")
-    OPENROUTER_SITE_NAME: str = os.getenv("OPENROUTER_SITE_NAME", "Nutrition AI Assistant")
-    OPENROUTER_TIMEOUT: float = float(os.getenv("OPENROUTER_TIMEOUT", "60.0"))
-    OPENROUTER_MAX_RETRIES: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "3"))
+    Combines all configuration sections.
+    """
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
-    # NotebookLM / Notion
-    NOTION_TOKEN: str = os.getenv("NOTION_TOKEN", "")
-    NOTION_WORKSPACE: str = os.getenv("NOTION_WORKSPACE", "")
-    NOTEBOOKLM_API_URL: str = os.getenv("NOTEBOOKLM_API_URL", "https://notebooklm.googleapis.com/v1")
-    NOTEBOOKLM_TIMEOUT: float = float(os.getenv("NOTEBOOKLM_TIMEOUT", "30.0"))
-    NOTEBOOKLM_MAX_RETRIES: int = int(os.getenv("NOTEBOOKLM_MAX_RETRIES", "3"))
+    app_name: str = Field(default="Nutrition AI Assistant", description="Application name")
+    app_version: str = Field(default="0.1.0", description="Application version")
+    debug: bool = Field(default=False, description="Enable debug mode")
+    host: str = Field(default="0.0.0.0", description="Server host")
+    port: int = Field(default=8000, description="Server port")
 
-    class Config:
-        env_file = ".env"
+    DATABASE: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    OPENROUTER: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
+    NOTEBOOKLM: NotebookLMSettings = Field(default_factory=NotebookLMSettings)
+    NOTION: NotionSettings = Field(default_factory=NotionSettings)
 
+
+# Global settings instance
 settings = Settings()

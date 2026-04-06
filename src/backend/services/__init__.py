@@ -1,5 +1,14 @@
-from .database_service import DatabaseService
-from .notebooklm_connector import NotebookLMConnector
-from .openrouter_service import OpenRouterService
+"""Services module - Business logic services."""
 
-__all__ = ["DatabaseService", "NotebookLMConnector", "OpenRouterService"]
+
+from .openrouter_service import OpenRouterService
+from .notebooklm_service import NotebookLMService
+
+# Backward compatibility alias
+NotebookLMConnector = NotebookLMService
+
+__all__ = [
+    'OpenRouterService',
+    'NotebookLMService',
+    'NotebookLMConnector',  # For backward compatibility
+]

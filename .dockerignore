@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose*.yml
+**/Dockerfile
+**/.dockerignore
+
+# Documentation
+*.md
+!CLAUDE.md
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# Data directories (will be created as volumes)
+sqlite_data/
+data/
+
+# Logs
+*.log
+logs/
+
+# Misc
+.DS_Store
+Thumbs.db

@@ -1,26 +1,28 @@
 """
-Main API Router - Endpoints that call the Orchestrator Agent.
-All business logic routes through the orchestrator.
+API Routes - All endpoints delegate to OrchestratorAgent.
+
+This module contains all HTTP endpoints for the nutrition assistant.
+Business logic is handled by the orchestrator which coordinates agents.
 """
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from typing import Dict, Any, Optional
-from datetime import date, datetime
-from ...services import DatabaseService
-from ...agents import OrchestrationAgent
+from datetime import datetime
+
+from .dependencies import get_orchestrator, get_db_service
+from agents.orchestrator_agent.agent import OrchestratorAgent
+from database.service import DatabaseService
 
 router = APIRouter(prefix="/api/v1", tags=["orchestrator"])
 
-# Dependencies to get agents from app state
-def get_orchestrator(request) -> OrchestrationAgent:
-    return request.app.state.orchestrator
 
-def get_db_service(request) -> DatabaseService:
-    return request.app.state.db_service
+# =============================================================================
+# Profile Endpoints
+# =============================================================================
 
 @router.post("/profile")
 async def create_profile(
     profile_data: Dict[str, Any] = Body(...),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
     Create a new user profile.
@@ -38,11 +40,10 @@ async def create_profile(
     }
     """
     try:
-        # Delegate to user agent via orchestrator
         result = await orchestrator.process({
-            "action": "get_profile",  # Will be expanded
+            "action": "create_profile",
             "agent": "user",
-            "request": {"action": "create_profile", "user_data": profile_data}
+            "user_data": profile_data
         })
         return result
     except Exception as e:
@@ -52,9 +53,9 @@ async def create_profile(
 @router.get("/profile/{user_id}")
 async def get_profile(
     user_id: int,
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
-    """Get user profile."""
+    """Get user profile by ID."""
     try:
         result = await orchestrator.process({
             "agent": "user",
@@ -70,9 +71,9 @@ async def get_profile(
 async def update_profile(
     user_id: int,
     updates: Dict[str, Any] = Body(...),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
-    """Update user profile."""
+    """Update user profile fields."""
     try:
         result = await orchestrator.process({
             "agent": "user",
@@ -85,13 +86,17 @@ async def update_profile(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# Meal Endpoints
+# =============================================================================
+
 @router.post("/log-meal")
 async def log_meal(
     meal_data: Dict[str, Any] = Body(...),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
-    Log a meal.
+    Log a meal for a user.
 
     Expected body:
     {
@@ -99,7 +104,8 @@ async def log_meal(
         "date": "2025-04-06",
         "meal_type": "lunch",
         "food_items": [
-            {"name": "chicken breast", "quantity": 150, "unit": "g", "calories": 250, "protein": 45, "carbs": 0, "fat": 6}
+            {"name": "chicken breast", "quantity": 150, "unit": "g",
+             "calories": 250, "protein": 45, "carbs": 0, "fat": 6}
         ],
         "notes": "Optional notes"
     }
@@ -119,7 +125,7 @@ async def log_meal(
 async def get_daily_summary(
     user_id: int,
     date_str: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
     Get daily summary: profile, macros consumed, targets, meal suggestions.
@@ -156,13 +162,10 @@ async def get_meal_suggestions(
     remaining_protein: Optional[int] = Query(None, description="Remaining protein (g)"),
     remaining_carbs: Optional[int] = Query(None, description="Remaining carbs (g)"),
     remaining_fat: Optional[int] = Query(None, description="Remaining fat (g)"),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
-    Get meal suggestions for user based on remaining macros and preferences.
-
-    Can optionally pass remaining macros as query parameters.
-    If not provided, will fetch from daily summary context.
+    Get meal suggestions based on remaining macros and preferences.
     """
     try:
         remaining = {}
@@ -188,24 +191,25 @@ async def get_meal_suggestions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# Progress Endpoints
+# =============================================================================
+
 @router.get("/progress-analysis/{user_id}")
 async def get_progress_analysis(
     user_id: int,
     days: int = Query(7, ge=1, le=90, description="Number of days to analyze"),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
     Get weekly progress analysis.
 
     Returns:
     {
-        "weight_change_weekly": float,
-        "weight_trend": "stable",
-        "avg_daily_calories": float,
-        "avg_protein_per_kg": float,
-        "adherence_rate": float,
-        "training_days": int,
-        "hunger_patterns": {...}
+        "overall_score": float,
+        "weight_trend": {...},
+        "calorie_adherence": {...},
+        "summary": {...}
     }
     """
     try:
@@ -214,7 +218,7 @@ async def get_progress_analysis(
             "user_id": user_id,
             "days": days
         })
-        return result.get("progress_analysis", {})
+        return result.get("progress_analysis", result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -222,26 +226,25 @@ async def get_progress_analysis(
 @router.get("/dashboard/{user_id}")
 async def get_dashboard(
     user_id: int,
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
-    Get complete dashboard data: summary, recommendations, progress.
-
-    Combines:
-    - Daily summary
-    - Progress analysis
-    - Recommendations
+    Get complete dashboard data combining daily summary, progress, and recommendations.
     """
     try:
-        # Get daily summary
         summary = await orchestrator.process({
             "action": "daily_summary",
             "user_id": user_id
         })
 
-        # Get progress report
         report = await orchestrator.process({
             "action": "progress_report",
+            "user_id": user_id,
+            "days": 7
+        })
+
+        recommendations = await orchestrator.process({
+            "action": "get_recommendations",
             "user_id": user_id,
             "days": 7
         })
@@ -249,17 +252,22 @@ async def get_dashboard(
         return {
             "daily_summary": summary,
             "progress_report": report,
+            "recommendations": recommendations,
             "generated_at": datetime.utcnow().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# Settings Endpoints
+# =============================================================================
+
 @router.post("/settings/{user_id}")
 async def update_settings(
     user_id: int,
     settings: Dict[str, Any] = Body(...),
-    orchestrator: OrchestrationAgent = Depends(get_orchestrator)
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
 ):
     """
     Update user settings and preferences.
@@ -280,6 +288,48 @@ async def update_settings(
             "action": "set_preferences",
             "user_id": user_id,
             "preferences": settings
+        })
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/settings/{user_id}")
+async def get_settings(
+    user_id: int,
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
+):
+    """Get user preferences and settings."""
+    try:
+        result = await orchestrator.process({
+            "agent": "user",
+            "action": "get_preferences",
+            "user_id": user_id
+        })
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Knowledge Endpoints
+# =============================================================================
+
+@router.get("/knowledge/query")
+async def query_knowledge(
+    query: str = Query(..., description="Nutrition question to query NotebookLM"),
+    orchestrator: OrchestratorAgent = Depends(get_orchestrator)
+):
+    """
+    Query the knowledge base (NotebookLM) for grounded nutrition information.
+
+    This endpoint NEVER fabricates nutritional facts - all responses come
+    directly from NotebookLM retrieval.
+    """
+    try:
+        result = await orchestrator.process({
+            "agent": "knowledge",
+            "query": query
         })
         return result
     except Exception as e:

@@ -1,3 +1,3 @@
-from .recommendation_agent import RecommendationAgent
-
-__all__ = ["RecommendationAgent"]
+"""Recommendation Agent - Provides coaching."""
+__all__ = ['RecommendationAgent']
+from .agent import RecommendationAgent

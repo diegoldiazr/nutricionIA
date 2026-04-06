@@ -1,3 +1,3 @@
-from .nutrition_agent import NutritionAgent
-
-__all__ = ["NutritionAgent"]
+"""Nutrition Agent - Calculates BMR, TDEE, and macros."""
+__all__ = ['NutritionAgent']
+from .agent import NutritionAgent

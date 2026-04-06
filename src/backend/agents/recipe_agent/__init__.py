@@ -1,2 +1,3 @@
-from .recipe_agent import RecipeAgent
-__all__ = ["RecipeAgent"]
+"""Recipe Agent - Generates detailed recipes."""
+__all__ = ['RecipeAgent']
+from .agent import RecipeAgent

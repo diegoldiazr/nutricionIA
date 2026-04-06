@@ -1,1 +1,2 @@
-# Backend package
+"""Backend package for Nutrition AI Assistant."""
+__version__ = "0.2.0"

@@ -1,3 +1,3 @@
-from .meal_planner_agent import MealPlannerAgent
-
-__all__ = ["MealPlannerAgent"]
+"""Meal Planner Agent - Generates meal suggestions."""
+__all__ = ['MealPlannerAgent']
+from .agent import MealPlannerAgent
