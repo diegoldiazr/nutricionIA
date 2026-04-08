@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
 
     # 1. Initialize database
     print("  - Initializing database...")
-    db_service = DatabaseService(settings.database_url)
+    db_service = DatabaseService(settings.DATABASE.url)
     await db_service.init_db()
     app.state.db_service = db_service
     print("  - Database initialized.")

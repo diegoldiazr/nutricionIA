@@ -10,7 +10,7 @@ services:
     volumes:
       - sqlite_data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///app/data/nutrition.db
+      - DATABASE_URL=sqlite:///./data/nutrition.db
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-claude-sonnet-4-20260414}
       - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-http://localhost:8000}
@@ -27,7 +27,7 @@ services:
     container_name: nutrition_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "4000:3000"
     depends_on:
       - backend
     environment:
